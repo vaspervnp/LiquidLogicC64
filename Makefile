@@ -4,6 +4,8 @@
 #   make assets     ξαναπαράγει τα assets/data (γραφικά, ήχος, πίστες)
 #   make run        x64sc με τη δισκέτα
 #   make test       headless VICE: λύνει πίστες με τα πλήκτρα, ειδικοί τύποι
+#   make shot       headless VICE: εικόνες όλων των οθονών στο build/shots
+#   make manual     εικόνες στο docs/imgs και τα PDF των εγχειριδίων
 #   make clean
 
 TASS     ?= 64tass
@@ -20,7 +22,7 @@ DATA     := assets/data/gfx.asm assets/data/physics.asm assets/data/levels.asm a
 # -C labels με κεφαλαία/πεζά, -B μακριά branches όπου χρειάζεται, -Wall
 TASSFLAGS := -C -B -Wall -I src -I assets/data
 
-.PHONY: all assets run test clean
+.PHONY: all assets run test shot manual clean
 
 all: $(D64)
 
@@ -52,6 +54,12 @@ run: $(D64)
 
 test: $(PRG)
 	$(PYTHON) tools/c64test.py test
+
+shot: $(PRG)
+	$(PYTHON) tools/c64test.py shot
+
+manual: $(PRG)
+	$(PYTHON) tools/manual.py
 
 clean:
 	rm -rf $(BUILD)

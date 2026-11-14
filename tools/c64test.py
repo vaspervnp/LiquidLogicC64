@@ -51,14 +51,14 @@ KEYS = {
 class Game:
     """Ένας C64 με το παιχνίδι, σταματημένος στο frame_done."""
 
-    def __init__(self, extra_args=()):
-        self.vm = vice.Vice(PRG, extra_args=("-initbreak", "0x080d", *extra_args), labels=LABELS)
+    def __init__(self, image=None, extra_args=()):
+        self.vm = vice.Vice(image or PRG, extra_args=("-initbreak", "0x080d", *extra_args), labels=LABELS)
         self.lab = self.vm.labels
         self.vm.wait_event((vice.EV_STOPPED,), 60)
         self.poke("test_mode", 1)
         self.keys([])
         self.frames = 0
-        self.vm.run_to("frame_done")
+        self.vm.run_to("frame_done", timeout=180)  # από δισκέτα, με πολλά VICE μαζί
 
     def close(self):
         self.vm.close()
@@ -354,13 +354,237 @@ def solve_levels(todo):
     return g.fails, g.log, g.frames
 
 
+def ui_checks():
+    """Τίτλος -> επιλογή -> πίστα 1, κλειδωμένες, παύση, άκυρη κίνηση, αστέρια,
+    ξεκλείδωμα, αποθήκευση στη δισκέτα και φόρτωμα σε νέα εκκίνηση."""
+    import shutil
+    import subprocess
+    import tempfile
+    levs = levels.levels()
+    tmp = tempfile.mkdtemp()
+    d64 = os.path.join(tmp, "ll.d64")
+    shutil.copy(os.path.join(ROOT, "build", "liquidlogic.d64"), d64)
+    drive = ("-drive8type", "1541", "-drive8truedrive")
+    g = Player(image=d64, extra_args=drive)
+    try:
+        g.run(30)
+        g.check(g.peek("mode") == MODE_TITLE, "η εκκίνηση δεν είναι στον τίτλο")
+        g.key("fire")
+        g.run(10)
+        g.check(g.peek("mode") == MODE_SELECT, "SPACE στον τίτλο: όχι επιλογή πίστας")
+        g.key("right")                  # η 2 είναι κλειδωμένη
+        g.key("fire")
+        g.run(3)
+        g.check(g.peek("mode") == MODE_SELECT and g.peek("sel_level") == 1, "μπήκε σε κλειδωμένη πίστα")
+        g.key("left")
+        g.key("fire")
+        g.run(10)
+        g.check(g.peek("mode") == MODE_GAME and g.peek("level") == 0, "η πίστα 1 δεν ξεκίνησε")
+        g.key("esc")
+        g.run(3)
+        g.check(g.peek("state") == ST_PAUSE, "ESC: όχι παύση")
+        g.key("esc")
+        g.run(3)
+        g.check(g.peek("state") == ST_IDLE, "ESC στην παύση: δεν συνέχισε")
+        # άκυρη μετάγγιση: ο στόχος χοροπηδάει και ξανακάθεται
+        b = levs[0]["bottles"]
+        bad = next((a, d) for a in range(len(b)) for d in range(len(b))
+                   if a != d and b[a]["layers"] and b[d]["layers"] and
+                   b[a]["layers"][-1] != b[d]["layers"][-1])
+        g.select(bad[0])
+        g.goto(bad[1])
+        g.run(1, ["fire"])
+        g.run(2)
+        g.check(g.peek("shake_cnt") > 0, "άκυρη μετάγγιση: κανένα χοροπηδητό")
+        g.run(30)
+        g.check(g.peek("shake_cnt") == 0 and g.bot(bad[1], B_RAISE) == 0, "το χοροπηδητό δεν τελείωσε")
+        # λύση στο par -> 3 αστέρια, ξεκλείδωμα της 2
+        g.play(levs[0], "πίστα 1 (μενού)")
+        g.check(g.peek("stars") == 3, f"αστέρια {g.peek('stars')}, όχι 3")
+        g.check(g.peek("unlocked") == 2, f"ξεκλείδωτες {g.peek('unlocked')}, όχι 2")
+        g.key("m")                      # φεύγοντας από τη νίκη: αποθήκευση
+        g.run(20)
+        g.check(g.peek("mode") == MODE_SELECT, "M στη νίκη: όχι μενού")
+        g.check(g.peek("save_ok") == 1, "η αποθήκευση απέτυχε")
+    finally:
+        g.close()
+    lst = subprocess.run(["c1541", d64, "-list"], capture_output=True, text=True).stdout
+    g.check('"liquid.sav"' in lst, "το LIQUID.SAV δεν γράφτηκε στη δισκέτα")
+    g2 = Player(image=d64, extra_args=drive)
+    try:
+        g2.run(30)
+        g.check(g2.peek("unlocked") == 2 and g2.peek("stars") == 3 and g2.peek("mode") == MODE_TITLE,
+                "η πρόοδος δεν φορτώθηκε μετά από επανεκκίνηση")
+        g2.key("fire")
+        g2.run(10)
+        g2.key("right")
+        g2.key("fire")
+        g2.run(10)
+        while g2.peek("mode") == MODE_CARD:
+            g2.key("fire")
+            g2.run(3)
+        g.check(g2.peek("mode") == MODE_GAME and g2.peek("level") == 1, "η ξεκλείδωτη πίστα 2 δεν ξεκίνησε")
+    finally:
+        g2.close()
+    shutil.rmtree(tmp)
+    g.say("οθόνες, αστέρια, δισκέτα: " + ("OK" if not g.fails else "ΑΠΟΤΥΧΙΑ"))
+    return g.fails, g.log, g.frames
+
+
+def to_title(g):
+    for _ in range(6):
+        m = g.peek("mode")
+        if m == MODE_TITLE:
+            return
+        if m == MODE_GAME:
+            if g.peek("state") not in (ST_PAUSE, ST_WIN, ST_FAIL):
+                g.key("esc")
+                g.run(3)
+            g.key("m")
+        else:
+            g.key("esc")
+        g.run(20)
+    g.check(g.peek("mode") == MODE_TITLE, "δεν γύρισε στον τίτλο")
+
+
+def feature_checks():
+    """«Χαλάρωση» (λύνεται, R, SPACE, M), seed ίδιο με τον CPC (relaxsim.py),
+    επιλογές, οδηγίες, στατιστικά, βελάκια με SHIFT, πλήκτρα."""
+    import relaxsim
+    g = Player()
+    try:
+        g.run(30)
+        g.key("r")
+        g.run(10)
+        for k in range(3):
+            name = f"χαλάρωση {k + 1}"
+            g.check(g.peek("mode") == MODE_GAME and g.peek("relax") == 1 and g.peek("state") == ST_IDLE,
+                    f"{name}: δεν ξεκίνησε")
+            lay = g.layers()
+            ncol = g.peek("relax_ncol")
+            counts = {}
+            for b in lay:
+                for x in b:
+                    counts[x] = counts.get(x, 0) + 1
+            g.check(5 <= ncol <= 8 and len(lay) == ncol + 2 and len(counts) == ncol and
+                    all(v == 4 for v in counts.values()) and sum(1 for b in lay if not b) == 2 and
+                    not any(len(b) == 4 and len(set(b)) == 1 for b in lay), f"{name}: λάθος πίστα {lay}")
+            sol = levels.solve(tuple(levels.bottle(4, b) for b in lay))
+            if sol is None:
+                g.say(f"{name}: χωρίς λύση από τον solver: SPACE στην παύση")
+                g.key("esc")
+                g.run(3)
+                g.key("fire")
+                g.run(10)
+                continue
+            if k == 0:                  # R: ξανά η ίδια
+                g.pour(*sol[0][:2])
+                g.key("r")
+                g.run(10)
+                g.check(g.layers() == lay and g.peek("moves") == 0, f"{name}: το R δεν την ξανάστησε")
+            lv = dict(bottles=[dict(cap=4, layers=b, dropper=False, lock=0, freeze=0) for b in lay],
+                      solution=[list(m) for m in sol], par=len(sol))
+            g.play(lv, name)
+            g.say(f"{name}: {ncol} χρώματα, λύση σε {len(sol)}")
+            g.key("fire")               # άλλη
+            g.run(10)
+            g.check(g.layers() != lay, f"{name}: το SPACE δεν έφτιαξε καινούργια")
+        g.key("esc")
+        g.run(3)
+        g.key("m")
+        g.run(20)
+        g.check(g.peek("mode") == MODE_TITLE and g.peek("relax") == 0, "χαλάρωση: το M δεν γύρισε στον τίτλο")
+        g.check(g.peek16("stat_relax") >= 3, "χαλάρωση: ο μετρητής δεν μέτρησε")
+        # seed: ίδιες πίστες με τον CPC
+        g.key("d")
+        g.run(5)
+        for k in "0042":
+            g.key(k)
+        g.key("fire")
+        g.run(10)
+        a = g.layers()
+        g.key("esc")
+        g.run(3)
+        g.key("fire")
+        g.run(10)
+        b = g.layers()
+        g.check(g.peek16("last_seed") == 42, "seed: δεν γράφτηκε το 42")
+        g.check(a == relaxsim.seeded(42, 1) and b == relaxsim.seeded(42, 2), f"seed 42: όχι όπως στον CPC: {a}")
+        to_title(g)
+        # επιλογές
+        g.key("o")
+        g.run(5)
+        g.check(g.peek("mode") == MODE_OPTIONS, "O: όχι επιλογές")
+        g.key("down")
+        g.key("fire")
+        g.check(g.peek("opt_sfx") == 0, "επιλογές: τα εφέ δεν έκλεισαν")
+        g.key("fire")
+        g.key("down")
+        g.key("fire")
+        g.check(g.peek("opt_sfx") == 1 and g.peek("opt_speed") == 1, "επιλογές: εφέ/ταχύτητα")
+        g.key("fire")
+        g.key("down")
+        g.key("fire")
+        g.check(g.peek("opt_theme") == g.peek("theme_open"), "επιλογές: θέμα χωρίς ξεκλείδωμα")
+        g.key("down")                   # ορισμός πλήκτρων: Z X P L SPACE... (εδώ: 1 2 3 4 5)
+        g.key("fire")
+        for k in "12345":
+            g.key(k)
+        g.check(g.peek("opt_keys", 10) == [7, 1, 7, 8, 1, 1, 1, 8, 2, 1] and g.peek("opt_redef") == 0xFF,
+                f"πλήκτρα: {g.peek('opt_keys', 10)}")
+        g.key("esc")
+        g.run(20)
+        g.check(g.peek("mode") == MODE_TITLE, "επιλογές: ESC όχι τίτλος")
+        g.key("fire")
+        g.run(5)
+        g.key("fire")
+        g.run(5)
+        while g.peek("mode") == MODE_CARD:
+            g.key("fire")
+        g.key("2")                      # το νέο «δεξιά»
+        g.run(2)
+        g.check(g.peek("cursor") == 1, "τα νέα πλήκτρα δεν δουλεύουν")
+        g.key("crsr_r")                 # τα βελάκια του C64: → και SHIFT+→
+        g.run(2)
+        g.check(g.peek("cursor") == 2, "CRSR →")
+        g.press("shift", "crsr_r", hold=1, after=1)
+        g.run(2)
+        g.check(g.peek("cursor") == 1, "SHIFT + CRSR →: όχι αριστερά")
+        to_title(g)
+        # οδηγίες, στατιστικά
+        g.key("h")
+        g.run(5)
+        g.check(g.peek("mode") == MODE_HELP, "H: όχι οδηγίες")
+        for _ in range(4):
+            g.key("fire")
+            g.run(3)
+        g.check(g.peek("mode") == MODE_TITLE, "οδηγίες: δεν γύρισαν στον τίτλο")
+        g.key("s")
+        g.run(5)
+        g.check(g.peek("mode") == MODE_STATS, "S: όχι στατιστικά")
+        g.key("right")
+        g.check(g.peek("md_sel") == 6, "στατιστικά: επιλογή μεταλλίου")
+        g.key("esc")
+        g.run(5)
+    except Exception as e:                                  # noqa: BLE001
+        g.fails += 1
+        g.say(f"ΑΠΟΤΥΧΙΑ: {type(e).__name__}: {e}")
+    finally:
+        g.close()
+    g.say("χαλάρωση, seed, επιλογές, οδηγίες, στατιστικά: " + ("OK" if not g.fails else "ΑΠΟΤΥΧΙΑ"))
+    return g.fails, g.log, g.frames
+
+
 def test(only=None, jobs=None):
     levs = levels.levels()
     todo = list(range(len(levs))) if only is None else [only]
-    jobs = jobs or min(len(todo), os.cpu_count() or 4)
+    jobs = jobs or min(len(todo), max(1, (os.cpu_count() or 4) - 2))
     chunks = [todo[k::jobs] for k in range(jobs)]
-    with ThreadPoolExecutor(max_workers=jobs) as pool:
-        results = list(pool.map(solve_levels, chunks))
+    tasks = [lambda c=c: solve_levels(c) for c in chunks]
+    if only is None:
+        tasks += [ui_checks, feature_checks]
+    with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+        results = list(pool.map(lambda t: t(), tasks))
     fails = 0
     lines = []
     for f, log, frames in results:
@@ -461,6 +685,10 @@ def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "shot"
     if cmd == "shot":
         shots()
+    elif cmd in ("ui", "features"):
+        f, log, _ = (ui_checks if cmd == "ui" else feature_checks)()
+        print("\n".join(log))
+        sys.exit(1 if f else 0)
     elif cmd == "test":
         only = int(sys.argv[2]) - 1 if len(sys.argv) > 2 else None
         sys.exit(test(only))

@@ -134,8 +134,11 @@ irq_out
         rti
 
 irq_frame
-        lda bord_col
-        sta VIC_BORDER
+        ldx bord_col            ; στην αρχή της επόμενης γραμμής (όχι μισή γραμμή)
+        lda VIC_RASTER
+-       cmp VIC_RASTER
+        beq -
+        stx VIC_BORDER
         ldx #7                  ; sprites
 -       lda sh_spr_col,x
         sta VIC_SPR_COL,x

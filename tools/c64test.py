@@ -564,6 +564,11 @@ def feature_checks():
         g.check(g.peek("mode") == MODE_STATS, "S: όχι στατιστικά")
         g.key("right")
         g.check(g.peek("md_sel") == 6, "στατιστικά: επιλογή μεταλλίου")
+        sel = []                        # κυκλικά: 6 -> 0 -> 6 -> 5 -> 11 -> 0
+        for k in ("right", "left", "up", "right", "down"):
+            g.key(k)
+            sel.append(g.peek("md_sel"))
+        g.check(sel == [0, 6, 5, 11, 0], f"στατιστικά: κυκλική επιλογή {sel}")
         g.key("esc")
         g.run(5)
     except Exception as e:                                  # noqa: BLE001

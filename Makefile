@@ -6,6 +6,7 @@
 #   make test       headless VICE: λύνει πίστες με τα πλήκτρα, ειδικοί τύποι
 #   make shot       headless VICE: εικόνες όλων των οθονών στο build/shots
 #   make manual     εικόνες στο docs/imgs και τα PDF των εγχειριδίων
+#   make video      headless VICE: βίντεο 4 λεπτών, build/liquidlogic.mp4 (ffmpeg)
 #   make clean
 
 TASS     ?= 64tass
@@ -22,7 +23,7 @@ DATA     := assets/data/gfx.asm assets/data/physics.asm assets/data/levels.asm a
 # -C labels με κεφαλαία/πεζά, -B μακριά branches όπου χρειάζεται, -Wall
 TASSFLAGS := -C -B -Wall -I src -I assets/data
 
-.PHONY: all assets run test shot manual clean
+.PHONY: all assets run test shot manual video clean
 
 all: $(D64)
 
@@ -60,6 +61,9 @@ shot: $(PRG)
 
 manual: $(PRG)
 	$(PYTHON) tools/manual.py
+
+video: $(PRG)
+	$(PYTHON) tools/video.py
 
 clean:
 	rm -rf $(BUILD)

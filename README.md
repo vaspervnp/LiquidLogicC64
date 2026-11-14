@@ -69,6 +69,7 @@ make assets   # ξαναπαράγει γραφικά, ήχο, πίνακες φ
 make test     # headless VICE: λύνει και τις 100 πίστες, ελέγχει ειδικούς τύπους, οθόνες, «Χαλάρωση», δισκέτα
 make shot     # headless VICE: εικόνες όλων των οθονών στο build/shots
 make manual   # εικόνες στο docs/imgs και τα PDF των εγχειριδίων (LibreOffice)
+make video    # βίντεο 4 λεπτών με ήχο -> build/liquidlogic.mp4 (ffmpeg)
 make clean
 ```
 

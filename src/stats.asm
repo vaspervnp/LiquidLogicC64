@@ -428,6 +428,7 @@ stats_frame
         bcc _ok
         cmp #128
         bcs _neg
+        sec                     ; (εδώ C = 0: χωρίς sec, 12 -> 255)
         sbc #MEDAL_COUNT
         jmp _ok
 _neg    clc

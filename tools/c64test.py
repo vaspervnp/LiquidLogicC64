@@ -95,7 +95,10 @@ class Game:
 
     def run(self, n=1, keys=()):
         self.keys(list(keys))
-        self.vm.run_to("frame_done", n)
+        try:
+            self.vm.run_to("frame_done", n, timeout=20)
+        except TimeoutError:
+            raise TimeoutError("κόλλησε: " + self.where()) from None
         self.frames += n
 
     def press(self, *keys, hold=2, after=2):
@@ -109,6 +112,14 @@ class Game:
                 return k
             self.run(1, keys)
         raise TimeoutError(f"μετά από {limit} καρέ")
+
+    def where(self):
+        """PC και η κοντινότερη ετικέτα (για τα κολλήματα)."""
+        r = self.vm.registers()
+        lab = {v: k for k, v in self.lab.items()}
+        pc = r["PC"]
+        best = max((a for a in lab if a <= pc), default=0)
+        return f"PC ${pc:04x} ({lab.get(best)}+{pc - best}) raster {r.get('LIN')}"
 
     def shot(self, name):
         os.makedirs(SHOTS, exist_ok=True)
@@ -362,29 +373,87 @@ def test(only=None, jobs=None):
 
 
 def shots():
-    with Game() as g:
+    """Εικόνες όλων των οθονών στο build/shots."""
+    levs = levels.levels()
+    with Player() as g:
         g.run(60)
         g.shot("title")
-        g.press("fire")
+        for key, name, back in (("o", "options", "esc"), ("s", "stats", "esc"), ("d", "seed", "esc")):
+            g.key(key)
+            g.run(10)
+            g.shot(name)
+            g.key(back)
+            g.run(10)
+        g.key("h")
+        for k in range(4):
+            g.run(5)
+            g.shot(f"help{k + 1}")
+            g.key("fire")
+        g.run(10)
+        g.poke("unlocked", 37)
+        for k in range(36):
+            g.poke(g.lab["stars"] + k, 1 + k % 3)
+        g.key("fire")
         g.run(10)
         g.shot("select")
-        g.press("fire")
-        g.run(20)
-        if g.peek("mode") == MODE_CARD:
-            g.shot("card")
-            g.press("fire")
-            g.run(10)
-        g.shot("level1")
-        g.press("right")
-        g.press("fire")
+        g.key("left")
+        g.key("up")
+        g.run(2)
+        g.shot("select2")
+        g.key("esc")
         g.run(5)
-        g.shot("level1_sel")
-        g.press("right")
-        g.press("right")
-        g.press("fire")
-        for k in range(12):
-            g.run(4)
-            g.shot(f"pour_{k:02d}")
+        g.key("fire")
+        g.run(5)
+        g.key("fire")
+        g.run(5)
+        g.shot("level1")
+        g.key("esc")
+        g.run(3)
+        g.shot("pause")
+        g.key("esc")
+        g.run(3)
+        g.play(levs[0], "1")
+        g.run(5)
+        g.shot("win")
+        for idx in (10, 20, 40, 41, 60, 61, 62, 63, 22):
+            g.load_level(idx)
+            g.poke("level", idx)
+        # κάρτες: ξανά από την αρχή, χωρίς τις κάρτες που έχουν δειχτεί
+        g.poke("seen_cards", 0)
+        g.poke("seen_cards+1", 0)
+        g.poke("level", 89)
+        g.key("r")
+        g.run(10)
+        k = 0
+        while g.peek("mode") == MODE_CARD and k < 12:
+            g.shot(f"card{k}")
+            g.key("fire")
+            g.run(5)
+            k += 1
+        g.run(5)
+        g.shot("level90")
+        g.poke("level", 99)
+        g.key("esc")
+        g.run(2)
+        g.key("m")
+        g.run(10)
+        g.shot("select_after")
+        g.poke("level", 99)
+        g.poke("mode", MODE_GAME)
+        g.run(1)
+        g.key("r")
+        g.run(10)
+        while g.peek("mode") == MODE_CARD:
+            g.key("fire")
+            g.run(3)
+        g.play(levs[99], "100")
+        g.run(60)
+        g.shot("win100")
+        g.key("fire")
+        g.run(100)
+        g.shot("ending")
+        g.run(60)
+        g.shot("ending2")
     print("build/shots/")
 
 

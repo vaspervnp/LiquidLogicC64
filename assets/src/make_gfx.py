@@ -50,20 +50,21 @@ PEN_COLOUR = [
     GREY,           # 1 γυαλί
     WHITE,          # 2 λάμψη, κείμενο, κέρσορας
     DARK_GREY,      # 3 κρυμμένη στρώση «?»
-    # τα 12 υγρά: τα πιο διακριτά χρώματα στα pens που μπαίνουν πρώτα στις
-    # πίστες (5, 10, 14 στην 1, 4, 11, 13 στη 2, 7, 12 στην 3, ...)
-    LIGHT_GREEN,    # 4
-    YELLOW,         # 5
-    LIGHT_RED,      # 6
-    ORANGE,         # 7
+    # τα 12 υγρά. Το 6 (κίτρινο) και το 9 (κυανό) είναι και χρώματα του
+    # κειμένου, όπως στον CPC· τα άλλα: τα πιο διακριτά χρώματα του C64 στα
+    # pens που μπαίνουν πρώτα στις πίστες (5, 10, 14 στην 1, 4, 11, 13 στη 2).
+    ORANGE,         # 4
+    RED,            # 5
+    YELLOW,         # 6
+    BROWN,          # 7
     GREEN,          # 8
-    BLUE,           # 9
+    CYAN,           # 9
     LIGHT_BLUE,     # 10
     PURPLE,         # 11
-    LIGHT_GREY,     # 12
-    CYAN,           # 13
-    RED,            # 14
-    BROWN,          # 15
+    BLUE,           # 12
+    LIGHT_GREY,     # 13
+    LIGHT_GREEN,    # 14
+    LIGHT_RED,      # 15
 ]
 NEON_GLASS = LIGHT_RED
 CORK_COLOUR = BROWN

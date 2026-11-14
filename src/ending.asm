@@ -68,7 +68,8 @@ ending_start
 -       sta sparks,x
         sta sparks+SP_SIZE*SPARK_N/2,x
         dex
-        bpl -
+        cpx #$ff
+        bne -
         lda #10
         sta burst_t
         lda #1

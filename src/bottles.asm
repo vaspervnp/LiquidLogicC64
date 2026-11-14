@@ -548,27 +548,7 @@ _line   lda rb_i
 +       sty tmp2
         jmp _comp
 _fz     sta tmp2
-_comp   ldy #0
-        lda (mp),y
-        and tmp2
-        ora (tp),y
-        sta buf0
-        iny
-        lda (mp),y
-        and tmp2
-        ora (tp),y
-        sta buf1
-        iny
-        lda (mp),y
-        and tmp2
-        ora (tp),y
-        sta buf2
-        iny
-        lda (mp),y
-        and tmp2
-        ora (tp),y
-        sta buf3
-        jsr row_marks
+_comp   jsr rr_line
 _store  ldy rb_i
         lda buf0
         sta (scr),y
@@ -594,6 +574,29 @@ _store  ldy rb_i
         beq +
         jmp _line
 +       rts
+
+; Μία γραμμή (rb_i, rb_L, tp, mp, fill tmp2) στα buf0-3, με τις σημάνσεις.
+rr_line ldy #0
+        lda (mp),y
+        and tmp2
+        ora (tp),y
+        sta buf0
+        iny
+        lda (mp),y
+        and tmp2
+        ora (tp),y
+        sta buf1
+        iny
+        lda (mp),y
+        and tmp2
+        ora (tp),y
+        sta buf2
+        iny
+        lda (mp),y
+        and tmp2
+        ora (tp),y
+        sta buf3
+        jmp row_marks
 
 ; Οι σημάνσεις στη γραμμή rb_L (buf0-3): κουρτίνα, «?», πάγος, εγκοπές,
 ; λουκέτο, φελλός / βολβός.
@@ -853,19 +856,91 @@ rc_glass .byte 0
 row_lay  .fill 8
 row_pos  .fill 8
 
-; Γραμμή υγρού στον στόχο της μετάγγισης (liquid_sync): ξανασχεδιάζεται η
-; σειρά cells της γραμμής. in: A = γραμμή από κάτω (0-59), bptr.
+; Γραμμή υγρού στον στόχο της μετάγγισης (liquid_sync): μόνο αυτή η γραμμή,
+; στο χρώμα της ροής (το slot του σε κάθε σειρά: t_fill, από την αρχή της
+; μετάγγισης). in: A = γραμμή από κάτω (0-59), bptr, rb_setup.
 liquid_row
-        eor #$ff                ; L = BODY_BOTTOM - A
+        sta tmp3                ; b
+        eor #$ff                ; L = BODY_BOTTOM - b
         sec
         adc #BODY_BOTTOM
+        sta rb_L
         clc
         adc #2
+        pha
+        and #7
+        sta rb_i
+        pla
         lsr a
         lsr a
         lsr a
         sta rb_k
-        jmp render_row
+        clc
+        adc rb_row0
+        asl a
+        asl a
+        asl a
+        tay
+        ldx rb_col
+        jsr scr_addr            ; η αρχή της σειράς cells
+        ldx rb_i                ; στρώση και θέση της γραμμής
+        lda tmp3
+        ldy #$ff
+        sec
+-       iny
+        sbc rb_lh
+        bcs -
+        adc rb_lh
+        sta row_pos,x
+        tya
+        sta row_lay,x
+        lda pour_pen
+        sta row_col,x
+        lda rb_L                ; tp, mp
+        asl a
+        asl a
+        sta tmp0
+        lda #0
+        rol a
+        sta tmp1
+        clc
+        lda tmp0
+        adc #<bottle_tmpl
+        sta tp
+        lda tmp1
+        adc #>bottle_tmpl
+        sta tp+1
+        clc
+        lda tmp0
+        adc #<bottle_imask
+        sta mp
+        lda tmp1
+        adc #>bottle_imask
+        sta mp+1
+        ldx rb_k
+        lda t_fill,x
+        sta tmp2
+        jsr rr_line
+        ldy rb_i
+        lda buf0
+        sta (scr),y
+        tya
+        clc
+        adc #8
+        tay
+        lda buf1
+        sta (scr),y
+        tya
+        adc #8
+        tay
+        lda buf2
+        sta (scr),y
+        tya
+        adc #8
+        tay
+        lda buf3
+        sta (scr),y
+        rts
 
 ; Σβήνει το μπουκάλι bptr (και τη σειρά πάνω του, για το σήκωμα).
 clear_bottle

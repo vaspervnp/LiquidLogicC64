@@ -135,11 +135,11 @@ relax_go
 ; Πέντε ολοκληρωμένα μπουκάλια (μορφή πίστας, levels.asm).
 title_bottles
         .byte 0,5,4,0,0,0
-        .byte 0,0,0,4, 14,14,14,14      ; κόκκινο, πορτοκαλί, κίτρινο,
-        .byte 0,0,0,4, 7,7,7,7          ; πράσινο, κυανό
-        .byte 0,0,0,4, 5,5,5,5
-        .byte 0,0,0,4, 4,4,4,4
-        .byte 0,0,0,4, 13,13,13,13
+        .byte 0,0,0,4, 5,5,5,5          ; κόκκινο, πορτοκαλί, κίτρινο,
+        .byte 0,0,0,4, 4,4,4,4          ; πράσινο, κυανό
+        .byte 0,0,0,4, 6,6,6,6
+        .byte 0,0,0,4, 14,14,14,14
+        .byte 0,0,0,4, 9,9,9,9
 
 page_title
         .byte 156,CENTER,PEN_WHITE
@@ -299,8 +299,8 @@ draw_cell
         jsr num_str
         lda tmp_x0
         jsr cell_xy
-        stx tmp4                ; στήλη
-        sty tmp5                ; y
+        stx dc_col                ; στήλη
+        sty dc_y                ; y
         lda #<(num_buf+1)       ; 2 ψηφία, 3 από το 100
         ldy #>(num_buf+1)
         jsr set_text
@@ -308,9 +308,9 @@ draw_cell
         cmp #99
         bcc +
         dec ptr0
-+       ldx tmp4
++       ldx dc_col
         inx
-        ldy tmp5
+        ldy dc_y
         lda tmp_pen
         jsr print_str
         ; τρία αστεράκια κάτω από τον αριθμό, στα pixels 2-3 των cells 0-2:
@@ -329,14 +329,14 @@ _star   lda tmp_pen             ; κλειδωμένη: χωρίς αστέρι�
         lda #PEN_LIQUID+2
 +       jsr pen_col
         pha
-        lda tmp5
+        lda dc_y
         clc
         adc #12
         lsr a
         lsr a
         lsr a
         pha
-        lda tmp4
+        lda dc_col
         clc
         adc tmp3
         tax
@@ -344,11 +344,11 @@ _star   lda tmp_pen             ; κλειδωμένη: χωρίς αστέρι�
         jsr cell_addr
         pla
         jsr set_slot
-        lda tmp5
+        lda dc_y
         clc
         adc #12
         tay
-        lda tmp4
+        lda dc_col
         clc
         adc tmp3
         tax
@@ -363,6 +363,9 @@ _star   lda tmp_pen             ; κλειδωμένη: χωρίς αστέρι�
         cmp #3
         bne _star
 _r      rts
+
+dc_col  .byte 0                 ; (το print_str αλλάζει τα tmp*)
+dc_y    .byte 0
 
 ; Πλαίσιο γύρω από το κελί A (X = 1 σχεδίαση, 0 σβήσιμο): γραμμές στο y-3
 ; και y+15, πλευρές στα pixels 0 και 15, στο slot %10.

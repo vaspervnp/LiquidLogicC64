@@ -127,15 +127,15 @@ _ln     ldx tmp2
         ldx tmp0
         sty tmp3
         ldy #0
-        lda #0
--       sta (scr),y
-        pha
+-       lda #0
+        sta (scr),y
         tya
         clc
         adc #8
         tay
-        pla
-        dex
+        bcc +
+        inc scr+1               ; (πέρα από τις 32 στήλες)
++       dex
         bne -
         ldy tmp3
         iny

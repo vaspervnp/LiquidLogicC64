@@ -202,6 +202,8 @@ _nolay  ldy #B_LH
         jsr mul_lh_d
         sta dst_lines
         sta dst_shown
+        lda #1
+        sta fe_dirty
         jsr render_fly
         jsr clear_fly_tail
         jsr fly_place
@@ -304,6 +306,7 @@ _nolay  ldy #B_LH
         sta rb_pour
         jsr draw_bottle_p
         jsr swap_bd
+        jsr target_tables
         jsr part_clear
         clc                     ; NC = εντάξει
         rts
@@ -529,7 +532,9 @@ pour_finish
         iny
         dex
         bne -
-_nolay  jsr render_fly
+_nolay  lda #1
+        sta fe_dirty
+        jsr render_fly
         ldx home_x
         ldy home_y
         jsr fly_start

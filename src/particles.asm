@@ -45,12 +45,15 @@ part_clear
 xor_list
         cmp #0
         beq _r
-        sta tmp0
+        stx tmp0
+        clc
+        adc tmp0
+        sta tmp0                ; τέλος
+        ldy #0
 -       lda dl_lo,x
         sta ptr3
         lda dl_hi,x
         sta ptr3+1
-        ldy #0
         lda (ptr3),y
         eor dl_val,x
         sta (ptr3),y
@@ -58,8 +61,9 @@ xor_list
         lda (ptr3),y
         eor dl_val,x
         sta (ptr3),y
+        dey
         inx
-        dec tmp0
+        cpx tmp0
         bne -
 _r      rts
 
@@ -90,7 +94,10 @@ _src    lda src_shown
         beq _dst
         bcc _dst
         dec src_shown
-        lda src_shown           ; η γραμμή του sprite: (BODY_BOTTOM - b) / 2
+        lda src_shown           ; η γραμμή του sprite (2 γραμμές του
+        lsr a                   ; μπουκαλιού: αλλάζει όταν αδειάσει η
+        bcs _src                ; κάτω, δηλαδή σε ζυγό src_shown)
+        lda src_shown
         eor #$ff
         sec
         adc #BODY_BOTTOM
@@ -115,6 +122,54 @@ _dst    lda dst_shown
         jsr liquid_row
         jmp _dst
 _r      rts
+
+;------------------------------------------------------------------
+; Οι πίνακες του στόχου για τα σωματίδια μέσα του (μετά το draw_bottle_p,
+; που βάζει το t_fill): ανά γραμμή από το dst_top - 2 (72 γραμμές) η
+; διεύθυνση της στήλης 0 στο bitmap και το pattern της ροής.
+target_tables
+        lda dst_top
+        sec
+        sbc #2
+        sta ti_base
+        ldy #B_X
+        lda (dptr),y
+        sta tmp4
+        asl a
+        asl a
+        sta dst_px
+        ldx #0
+-       txa
+        clc
+        adc ti_base
+        tay
+        lda ytab_lo,y
+        ldy tmp4
+        clc
+        adc col8_lo,y
+        sta ti_lo,x
+        txa
+        clc
+        adc ti_base
+        tay
+        lda ytab_hi,y
+        ldy tmp4
+        adc col8_hi,y
+        sta ti_hi,x
+        txa
+        lsr a
+        lsr a
+        lsr a
+        tay
+        lda t_fill,y
+        sta ti_fill,x
+        inx
+        cpx #9*8
+        bne -
+        rts
+
+ti_base .byte 0
+dst_px  .byte 0
 
 ;------------------------------------------------------------------
 part_emit
@@ -213,78 +268,90 @@ set_dst_surf
 
 ;------------------------------------------------------------------
 ; Φυσική όλων των ζωντανών: η νέα λίστα XOR (για όσα είναι μέσα στο B) και ο
-; νέος buffer του πίδακα (για όσα πετάνε).
+; νέος buffer του πίδακα (για όσα πετάνε). X = σωματίδιο· όταν σβήνει, το
+; τελευταίο (ακόμα όχι ενημερωμένο) μπαίνει στη θέση του και ενημερώνεται.
 part_update
         lda dlist               ; η νέα λίστα στον άλλο buffer
         eor #MAX_PART
         sta plist
-        lda #0
-        sta plist_n
-        jsr jet_clear
-        lda #1
-        sta jet_flip_req
-        lda p_alive
-        bne +
-        jmp _fin
-+       sta upd_left
+        sta pl_end
+        jsr jet_clear           ; (ptr2 = ο buffer του πίδακα)
         ldx #0
-_p      lda p_st,x
-        sta pc_st
-        lda p_vyl,x             ; vy += g, ως VY_MAX
+        cpx p_alive
+        bcc _p
+        jmp _fin
+_p      lda p_vyl,x             ; vy += g, ως VY_MAX
         clc
         adc #GRAVITY
-        sta tmp0
+        sta p_vyl,x
         lda p_vyh,x
         adc #0
         bmi _vy                 ; αρνητικό: ανεβαίνει
         cmp #VY_MAX
         bcc _vy
         lda #0
-        sta tmp0
+        sta p_vyl,x
         lda #VY_MAX
 _vy     sta p_vyh,x
-        sta pc_vyh
-        lda tmp0
-        sta p_vyl,x
-        clc                     ; y += vy
-        adc p_yl,x
+        tay
+        lda p_yl,x              ; y += vy
+        clc
+        adc p_vyl,x
         sta p_yl,x
-        lda p_yh,x
-        adc pc_vyh
+        tya
+        adc p_yh,x
         sta p_yh,x
         sta pc_y
-        clc                     ; x += vx
-        lda p_xl,x
+        lda p_xl,x              ; x += vx
+        clc
         adc p_vxl,x
         sta p_xl,x
         lda p_xh,x
         adc p_vxh,x
         sta p_xh,x
         sta pc_x
-        lda pc_st
-        cmp #1
-        beq _flight
+        ldy p_st,x
+        dey
+        beq +
         jmp _inside
 
-_flight lda pc_x
-        cmp #160
+        ; πτήση (A = x)
++       cmp #160
         bcc +
         jmp _kill               ; έξω αριστερά/δεξιά
 +       lda pc_y
         cmp #240
-        bcc +
-        jmp _next               ; αρνητικό y: πάνω από την οθόνη
-+       cmp #200
+        bcs _next               ; αρνητικό y: πάνω από την οθόνη
+        cmp #200
         bcc +
         jmp _kill
-+       lda pc_vyh
-        bmi _fdone              ; ανεβαίνει ακόμα
-        lda pc_y
++       ldy p_vyh,x
+        bmi _plot               ; ανεβαίνει ακόμα
         cmp dst_entry
-        bcc _fdone
-        lda #2                  ; μπαίνει στο λαιμό του B
+        bcs _enter
+_plot   ldy pc_y                ; στα sprites του πίδακα (jet_tables)
+        lda jy_off,y
+        bmi _next
+        ldy pc_x
+        clc
+        adc jx_off,y            ; ($ff έξω: carry)
+        bcs _next
+        sta tmp0
+        lda jx_mask,y
+        ldy tmp0
+        ora (ptr2),y
+        sta (ptr2),y
+        tya                     ; για το σβήσιμο
+        ldy jet_n
+        sta (ptr1),y
+        inc jet_n
+_next   inx
+        cpx p_alive
+        bcc _p
+        jmp _fin
+
+_enter  lda #2                  ; μπαίνει στο λαιμό του B
         sta p_st,x
-        sta pc_st
         lda pc_x
         cmp dst_nl
         bcs +
@@ -300,12 +367,13 @@ _flight lda pc_x
         sec
         sbc #16
         sta p_vxl,x
-        jsr sext
-        tya
+        ldy #0
+        cmp #$80
+        bcc +
+        dey
++       tya
         sta p_vxh,x
-        jmp _done
-_fdone  jsr jet_plot
-        jmp _next
+        jmp _draw
 
 _inside lda pc_x                ; τοίχοι: vx = -vx/2
         cmp dst_xl
@@ -335,8 +403,8 @@ _wall   sta p_xh,x
 _surf   lda pc_y
         and #$fe
         cmp dst_surf
-        bcc _done
-        lda pc_st               ; στην επιφάνεια
+        bcc _draw
+        lda p_st,x              ; στην επιφάνεια
         cmp #2
         bne _absorb
         jsr rnd
@@ -375,15 +443,19 @@ _surf   lda pc_y
         sec
         sbc #64
         sta p_vxl,x
-        jsr sext
-        tya
+        ldy #0
+        cmp #$80
+        bcc +
+        dey
++       tya
         sta p_vxh,x
-        jmp _done
+        jmp _draw
 _absorb jsr absorb
 _kill   dec p_alive             ; το τελευταίο (ακόμα όχι ενημερωμένο) στη θέση του
-        dec upd_left
-        beq _fin
         ldy p_alive
+        sty tmp7
+        cpx tmp7
+        bcs _fin
         lda p_st,y
         sta p_st,x
         lda p_vyl,y
@@ -403,75 +475,50 @@ _kill   dec p_alive             ; το τελευταίο (ακόμα όχι ε�
         lda p_xh,y
         sta p_xh,x
         jmp _p
-_done   lda pc_st               ; στη λίστα XOR (μέσα στο B)
-        cmp #1
-        beq _fdone
-        lda pc_x
-        cmp #160
-        bcs _next
-        lda pc_y
-        cmp #198
-        bcs _next
+_draw   lda pc_y                ; στη λίστα XOR (μέσα στο B: ti_*)
         and #$fe
-        sta tmp1
-        sec                     ; σειρά cells του στόχου: (y - top + 2) / 8
-        sbc dst_top
-        clc
-        adc #2
-        lsr a
-        lsr a
-        lsr a
-        cmp #9
-        bcs _next
-        tay
-        lda t_fill,y
-        sta tmp2
+        sec
+        sbc ti_base
+        cmp #9*8
+        bcs _dn
+        tay                     ; γραμμή μέσα στις σειρές cells του στόχου
         lda pc_x
-        and #3
-        tay
-        lda xor_pix,y
-        and tmp2
-        beq _next
+        sec
+        sbc dst_px
+        cmp #16
+        bcs _dn
+        sta tmp2                ; pixel μέσα στο μπουκάλι
         stx pc_cur
-        ldx plist
-        txa
-        clc
-        adc plist_n
-        tax
-        sta tmp3
-        lda pc_x
-        lsr a
-        lsr a
-        tay
-        sta tmp4
-        ldy tmp1
-        lda ytab_lo,y
-        ldy tmp4
-        clc
-        adc col8_lo,y
-        sta dl_lo,x
-        ldy tmp1
-        lda ytab_hi,y
-        ldy tmp4
-        adc col8_hi,y
-        sta dl_hi,x
-        lda pc_x
         and #3
-        tay
-        lda xor_pix,y
-        and tmp2
+        tax
+        lda xor_pix,x
+        and ti_fill,y
+        beq _dn2
+        ldx pl_end
         sta dl_val,x
-        inc plist_n
-        ldx pc_cur
-_next   inx
-        dec upd_left
-        beq _fin
-        jmp _p
-_fin    lda jet_flip_req        ; ο νέος buffer του πίδακα, για το interrupt
+        lda tmp2                ; (pixel / 4) * 8
+        and #$0c
+        asl a
+        adc ti_lo,y
+        sta dl_lo,x
+        lda ti_hi,y
+        adc #0
+        sta dl_hi,x
+        inc pl_end
+_dn2    ldx pc_cur
+_dn     jmp _next
+_fin    lda pl_end
+        sec
+        sbc plist
+        sta plist_n
+        ldx jet_buf
+        lda jet_n
+        sta jet_cnt,x
+        lda #1                  ; ο νέος buffer του πίδακα, για το interrupt
         sta jet_flip
         rts
 
-jet_flip_req .byte 0
+pl_end  .byte 0
 xor_pix .byte $c0,$30,$0c,$03
 
 absorb

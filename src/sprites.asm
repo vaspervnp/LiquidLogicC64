@@ -277,6 +277,24 @@ BAND2_Y         = 138
 fly_events
         lda ev_ready            ; (το interrupt δεν το πήρε ακόμα)
         bne _r
+        lda fe_dirty            ; ίδια με του προηγούμενου καρέ: τίποτα
+        bne +
+        lda fly_on
+        cmp fe_on
+        bne +
+        beq _r0
+_r      rts
+_r0     lda fly_on
+        beq _r
+        lda fly_y+1
+        cmp fe_y
+        beq _r
++       lda #0
+        sta fe_dirty
+        lda fly_on
+        sta fe_on
+        lda fly_y+1
+        sta fe_y
         lda #0
         sta ev_n
         lda opt_theme
@@ -348,7 +366,11 @@ _fill   ldx #0                  ; ταξινομημένα: το καθένα κ
         jmp -
 _done   lda #1
         sta ev_ready
-_r      rts
+        rts
+
+fe_dirty .byte 1                ; 1 = ξανά (στρώσεις, θέμα)
+fe_on   .byte 0
+fe_y    .byte 0
 
 ; Νέο γεγονός: A = raster, X = τύπος (1 border, 2 sprites), Y = χρώμα. Στη
 ; θέση του κατά raster (insertion sort)· έξω από την εικόνα: τίποτα.
@@ -413,12 +435,15 @@ jet_show
         sta sh_spr_col+1
         sta sh_spr_col+2
         lda #0                  ; και οι δύο buffers άδειοι
+        sta jet_cnt
+        sta jet_cnt+1
         ldx #191
 -       sta SPR_BASE+SPR_BLK_JET*64,x
         sta SPR_BASE+SPR_BLK_JET*64+192,x
         dex
         cpx #$ff
         bne -
+        jsr jet_tables
         lda #1
         sta jet_on
         lda sh_spr_ena
@@ -450,47 +475,82 @@ jet_ptrs
         sta sh_spr_ptr+2
         rts
 
-; ptr2 = ο buffer που γράφει η φυσική, άδειος.
+; ptr2 = ο buffer που γράφει η φυσική, άδειος: σβήνονται μόνο τα bytes που
+; γράφτηκαν σε αυτόν την προηγούμενη φορά (jet_cl: 64 θέσεις ανά buffer,
+; jet_cnt). ptr1 = η λίστα του, jet_n = 0 (part_update: για κάθε byte που
+; γράφει, jet_n++, και στο τέλος jet_cnt).
 jet_clear
-        lda #<(SPR_BASE+SPR_BLK_JET*64)
         ldx jet_buf
-        beq +
-        lda #<(SPR_BASE+(SPR_BLK_JET+3)*64)
-+       sta ptr2
+        lda jet_lo,x
+        sta ptr2
         lda #>(SPR_BASE+SPR_BLK_JET*64)
         sta ptr2+1
+        lda jet_cllo,x
+        sta ptr1
+        lda #>jet_cl
+        sta ptr1+1
+        lda jet_cnt,x
+        beq _done
+        sta tmp0
+        lda jet_cllo,x
+        sec
+        sbc #<jet_cl
+        tax
         lda #0
-        ldy #191
--       sta (ptr2),y
-        dey
-        cpy #$ff
+-       ldy jet_cl,x
+        sta (ptr2),y
+        inx
+        dec tmp0
         bne -
+_done   lda #0
+        sta jet_n
         rts
 
-; Σωματίδιο στο (pc_x, pc_y) στον buffer ptr2, αν είναι μέσα στην περιοχή.
-jet_plot
-        lda pc_x
-        sec
-        sbc jet_x0
-        cmp #JET_W
-        bcs _r
+jet_lo  .byte <(SPR_BASE+SPR_BLK_JET*64), <(SPR_BASE+(SPR_BLK_JET+3)*64)
+jet_cllo .byte <jet_cl, <(jet_cl+64)
+jet_cnt .byte 0,0
+jet_n   .byte 0
+        .cerror (jet_cl >> 8) != ((jet_cl + 127) >> 8), "jet_cl crosses a page"
+
+; Οι πίνακες του πίδακα για την περιοχή jet_x0, jet_y0: ανά γραμμή y η θέση
+; της γραμμής του sprite (x 3) και ανά pixel x η θέση (sprite * 64 + byte)
+; και η μάσκα· $ff έξω από την περιοχή (part_update).
+jet_tables
+        lda #$ff
+        ldx #199
+-       sta jy_off,x
+        cpx #160
+        bcs +
+        sta jx_off,x
++       dex
+        cpx #$ff
+        bne -
+        lda jet_y0
         tax
-        lda pc_y
-        and #$fe
-        sec
-        sbc jet_y0
-        cmp #2*JET_ROWS
-        bcs _r
-        lsr a
-        tay
+        ldy #0
+-       cpx #200
+        bcs +
         lda jet_row3,y
-        clc
-        adc jet_xoff,x
-        tay
-        lda jet_xmask,x
-        ora (ptr2),y
-        sta (ptr2),y
-_r      rts
+        sta jy_off,x
+        sta jy_off+1,x
+        inx
+        inx
+        iny
+        cpy #JET_ROWS
+        bne -
++       ldx jet_x0
+        ldy #0
+-       cpx #160
+        bcs +
+        lda jet_xoff,y
+        sta jx_off,x
+        lda jet_xmask,y
+        sta jx_mask,x
+        inx
+        iny
+        cpy #JET_W
+        bne -
++       rts
 
 ; pixel 0-35 -> θέση στον buffer (sprite * 64 + byte) και μάσκα (2 bits hires)
 jet_xoff  .byte (range(JET_W) / 12) * 64 + (range(JET_W) % 12) / 4

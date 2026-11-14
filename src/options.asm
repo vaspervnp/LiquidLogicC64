@@ -94,6 +94,8 @@ apply_theme
         beq +
         lda #NEON_GLASS
 +       sta glass_col
+        lda #1
+        sta fe_dirty
         rts
 
 ;------------------------------------------------------------------
@@ -170,7 +172,9 @@ print_at
         pha
         cpx #CENTER
         bne +
+        sty tmp_y
         jsr str_len
+        ldy tmp_y
         sta tmp6
         lda #40
         sec

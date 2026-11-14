@@ -165,14 +165,14 @@ start
 
 main_loop
         jsr wait_frame
-        inc frames_main
+prof_0  inc frames_main
         jsr part_erase
-        jsr liquid_sync
-        jsr timer_tick
+prof_1  jsr liquid_sync
+prof_2  jsr timer_tick
         jsr part_draw
-        jsr read_input
-        jsr mode_frame
-        jsr fly_events          ; raster: τα χρώματα της πηγής για το επόμενο καρέ
+prof_3  jsr read_input
+prof_4  jsr mode_frame
+prof_5  jsr fly_events          ; raster: τα χρώματα της πηγής για το επόμενο καρέ
 frame_done
         jmp main_loop
 
@@ -357,6 +357,14 @@ code_end
         .virtual code_end
 undo_stack .fill UNDO_MAX*SNAP_SIZE     ; στιγμιότυπα του undo
 sparks     .fill SPARK_N*SP_SIZE        ; τα πυροτεχνήματα του τέλους
+        .align 128
+jet_cl     .fill 2*MAX_PART     ; ο πίδακας: τα bytes που γράφτηκαν, ανά buffer
+jy_off     .fill 200            ; ο πίδακας: πίνακες της περιοχής του (jet_tables)
+jx_off     .fill 160
+jx_mask    .fill 160
+ti_lo      .fill 9*8            ; ο στόχος: πίνακες για τα σωματίδια (target_tables)
+ti_hi      .fill 9*8
+ti_fill    .fill 9*8
 bss2_end
         .endv
         .cerror bss2_end > SPR_BASE, "code overflows into the sprites"

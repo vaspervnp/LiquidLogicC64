@@ -234,7 +234,17 @@ _hw     lda #$ff
         lda CIA1_PRB            ; joystick 1
         ora #$e0
         sta keymap+9
+        lda #0                  ; κανένα πλήκτρο: όλες οι στήλες $ff
+        sta CIA1_PRA
+        lda CIA1_PRB
+        cmp #$ff
+        bne _scan
         ldx #7
+-       sta keymap,x
+        dex
+        bpl -
+        rts
+_scan   ldx #7
         lda #$7f
 -       sta CIA1_PRA
         pha
@@ -263,7 +273,20 @@ IN_UNDO         = 128
 ; για τις ενέργειες IN2_* στο input2 / input2_new.
 read_input
         jsr read_keys
-        lda #<key_bindings2
+        lda #$ff                ; κανένα πλήκτρο, joystick ελεύθερο: γρήγορα
+        ldx #9
+-       and keymap,x
+        dex
+        bpl -
+        cmp #$ff
+        bne _map
+        lda #0
+        sta input
+        sta input_new
+        sta input2
+        sta input2_new
+        rts
+_map    lda #<key_bindings2
         ldy #>key_bindings2
         jsr map_keys
         lda input2
